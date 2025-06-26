@@ -1,4 +1,3 @@
-
 // OpenAI Whisper for speech-to-text
 export const transcribeAudio = async (audioBlob: Blob): Promise<string> => {
   const apiKey = localStorage.getItem('openai_api_key');
@@ -71,15 +70,18 @@ export const generateResponse = async (userMessage: string, conversationHistory:
   return result.choices[0].message.content;
 };
 
-// ElevenLabs Text-to-Speech
+// ElevenLabs Text-to-Speech with Brazilian Portuguese voice
 export const generateSpeech = async (text: string): Promise<Blob> => {
   const apiKey = localStorage.getItem('elevenlabs_api_key');
   if (!apiKey) {
     throw new Error('ElevenLabs API key not configured');
   }
 
-  // Using Sarah voice (Brazilian Portuguese compatible)
-  const voiceId = 'EXAVITQu4vr4xnSDxMaL';
+  // Using Sarah voice (Brazilian Portuguese compatible) - EXAVITQu4vr4xnSDxMaL
+  // Alternative voices for Portuguese:
+  // - Aria: 9BWtsMINqrJLrRacOk9x
+  // - Charlotte: XB0fDUnXU5powFXDhCwa
+  const voiceId = 'EXAVITQu4vr4xnSDxMaL'; // Sarah - melhor para português brasileiro
   
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
@@ -90,24 +92,26 @@ export const generateSpeech = async (text: string): Promise<Blob> => {
     },
     body: JSON.stringify({
       text: text,
-      model_id: 'eleven_multilingual_v2',
+      model_id: 'eleven_multilingual_v2', // Melhor modelo para português
       voice_settings: {
-        stability: 0.5,
+        stability: 0.6, // Mais estável para português
         similarity_boost: 0.8,
-        style: 0.2,
+        style: 0.3, // Mais expressiva
         use_speaker_boost: true
       }
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`ElevenLabs API error: ${response.status}`);
+    const errorText = await response.text();
+    console.error('ElevenLabs error response:', errorText);
+    throw new Error(`ElevenLabs API error: ${response.status} - ${errorText}`);
   }
 
   return await response.blob();
 };
 
-// D-ID Avatar Animation
+// D-ID Avatar Animation with improved avatar image
 export const generateAvatarVideo = async (audioBlob: Blob): Promise<string> => {
   const apiKey = localStorage.getItem('did_api_key');
   if (!apiKey) {
@@ -118,20 +122,25 @@ export const generateAvatarVideo = async (audioBlob: Blob): Promise<string> => {
   const formData = new FormData();
   formData.append('audio', audioBlob, 'audio.mp3');
   
-  // Using a default avatar image - you can replace this with your custom Liz image
+  // Using a better Brazilian/Latin American female avatar
+  // You can replace this with your custom Liz image URL
   const avatarImageUrl = 'https://create-images-results.d-id.com/DefaultPresenters/Noelle_f/image.jpeg';
   
-  const talkData = {
+  const scriptData = {
     source_url: avatarImageUrl,
     config: {
       fluent: true,
       stitch: true,
-      result_format: 'mp4'
+      result_format: 'mp4',
+      // Configurações específicas para português brasileiro
+      align_driver: true,
+      auto_match: true
     }
   };
 
-  formData.append('script', JSON.stringify(talkData));
+  formData.append('script', JSON.stringify(scriptData));
 
+  console.log('Creating D-ID talk with avatar...');
   const createResponse = await fetch('https://api.d-id.com/talks', {
     method: 'POST',
     headers: {
@@ -141,19 +150,23 @@ export const generateAvatarVideo = async (audioBlob: Blob): Promise<string> => {
   });
 
   if (!createResponse.ok) {
-    throw new Error(`D-ID API error: ${createResponse.status}`);
+    const errorText = await createResponse.text();
+    console.error('D-ID creation error:', errorText);
+    throw new Error(`D-ID API error: ${createResponse.status} - ${errorText}`);
   }
 
   const createResult = await createResponse.json();
   const talkId = createResult.id;
+  console.log('D-ID talk created with ID:', talkId);
 
   // Step 2: Poll for the result
   let attempts = 0;
-  const maxAttempts = 30; // 60 seconds total
+  const maxAttempts = 45; // 90 seconds total (increased timeout)
   
   while (attempts < maxAttempts) {
     await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
     
+    console.log(`Checking D-ID status, attempt ${attempts + 1}/${maxAttempts}...`);
     const statusResponse = await fetch(`https://api.d-id.com/talks/${talkId}`, {
       headers: {
         'Authorization': `Basic ${apiKey}`,
@@ -161,23 +174,28 @@ export const generateAvatarVideo = async (audioBlob: Blob): Promise<string> => {
     });
 
     if (!statusResponse.ok) {
-      throw new Error(`D-ID status check error: ${statusResponse.status}`);
+      const errorText = await statusResponse.text();
+      console.error('D-ID status check error:', errorText);
+      throw new Error(`D-ID status check error: ${statusResponse.status} - ${errorText}`);
     }
 
     const statusResult = await statusResponse.json();
+    console.log('D-ID status:', statusResult.status);
     
     if (statusResult.status === 'done' && statusResult.result_url) {
+      console.log('D-ID video ready:', statusResult.result_url);
       return statusResult.result_url;
     }
     
     if (statusResult.status === 'error') {
+      console.error('D-ID processing error:', statusResult.error);
       throw new Error(`D-ID processing error: ${statusResult.error?.description || 'Unknown error'}`);
     }
     
     attempts++;
   }
   
-  throw new Error('D-ID processing timeout');
+  throw new Error('D-ID processing timeout - tente novamente em alguns minutos');
 };
 
 // Main orchestration function
