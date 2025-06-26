@@ -1,12 +1,13 @@
-
-import React, { useState } from 'react';
-import { Key, Eye, EyeOff, Save, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Key, Eye, EyeOff, Save, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { getApiKeyStatus } from '@/utils/apiValidation';
 
 interface ApiKeys {
   openai: string;
@@ -27,7 +28,12 @@ const ConfigPanel: React.FC = () => {
     did: false
   });
   
+  const [keyStatus, setKeyStatus] = useState(getApiKeyStatus());
   const { toast } = useToast();
+
+  useEffect(() => {
+    setKeyStatus(getApiKeyStatus());
+  }, [apiKeys]);
 
   const handleKeyChange = (provider: keyof ApiKeys, value: string) => {
     setApiKeys(prev => ({ ...prev, [provider]: value }));
@@ -45,6 +51,7 @@ const ConfigPanel: React.FC = () => {
       localStorage.setItem('did_api_key', apiKeys.did);
       
       console.log('API keys saved to localStorage');
+      setKeyStatus(getApiKeyStatus());
       
       toast({
         title: "Configurações salvas",
@@ -62,16 +69,30 @@ const ConfigPanel: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center space-x-2">
-        <Key className="h-5 w-5 text-blue-500" />
-        <h3 className="text-lg font-medium text-gray-900">Configurações de API</h3>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <Key className="h-5 w-5 text-blue-500" />
+          <h3 className="text-lg font-medium text-gray-900">Configurações de API</h3>
+        </div>
+        <Badge variant={keyStatus.isValid ? "default" : "destructive"}>
+          {keyStatus.isValid ? (
+            <>
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Configurado
+            </>
+          ) : (
+            <>
+              <AlertCircle className="h-3 w-3 mr-1" />
+              Incompleto
+            </>
+          )}
+        </Badge>
       </div>
 
-      <Alert>
+      <Alert variant={keyStatus.isValid ? "default" : "destructive"}>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Configure suas chaves de API para habilitar todas as funcionalidades do sistema.
-          As chaves são armazenadas localmente no seu navegador.
+          {keyStatus.message}. {!keyStatus.isValid && "Configure todas as chaves para habilitar a funcionalidade completa."}
         </AlertDescription>
       </Alert>
 

@@ -28,6 +28,7 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<Array<{role: string, content: string}>>([]);
   const { toast } = useToast();
 
   const handleAudioCapture = async (audioBlob: Blob) => {
@@ -35,6 +36,21 @@ const Index = () => {
     setIsProcessing(true);
     
     try {
+      // Check if API keys are configured
+      const openaiKey = localStorage.getItem('openai_api_key');
+      const elevenlabsKey = localStorage.getItem('elevenlabs_api_key');
+      const didKey = localStorage.getItem('did_api_key');
+      
+      if (!openaiKey || !elevenlabsKey || !didKey) {
+        toast({
+          title: "Configuração necessária",
+          description: "Configure suas chaves de API nas configurações antes de usar.",
+          variant: "destructive"
+        });
+        setIsProcessing(false);
+        return;
+      }
+
       // Add user message placeholder
       const userMessage: Message = {
         id: Date.now().toString(),
@@ -44,14 +60,16 @@ const Index = () => {
       };
       setMessages(prev => [...prev, userMessage]);
 
-      // Simulate API processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Import the AI service dynamically to avoid loading it if not needed
+      const { processVoiceMessage } = await import('../services/aiService');
+      
+      // Process the voice message through the AI pipeline
+      const result = await processVoiceMessage(audioBlob, conversationHistory);
       
       // Update user message with transcription
-      const transcription = 'Olá, como você está hoje?';
       setMessages(prev => prev.map(msg => 
         msg.id === userMessage.id 
-          ? { ...msg, content: transcription }
+          ? { ...msg, content: result.transcription }
           : msg
       ));
 
@@ -59,24 +77,51 @@ const Index = () => {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: 'Olá! Estou muito bem, obrigada por perguntar. Como posso ajudá-la hoje?',
+        content: result.response,
         timestamp: new Date(),
-        videoUrl: '/placeholder-avatar-video.mp4' // Placeholder for D-ID generated video
+        videoUrl: result.videoUrl
       };
       
       setMessages(prev => [...prev, assistantMessage]);
-      setCurrentVideoUrl(assistantMessage.videoUrl || '');
+      setCurrentVideoUrl(result.videoUrl);
+      
+      // Update conversation history for context
+      setConversationHistory(prev => [
+        ...prev,
+        { role: 'user', content: result.transcription },
+        { role: 'assistant', content: result.response }
+      ]);
       
       toast({
         title: "Resposta processada",
-        description: "Avatar está respondendo...",
+        description: "Liz está respondendo...",
       });
       
     } catch (error) {
       console.error('Error processing audio:', error);
+      
+      // Remove the placeholder message on error
+      setMessages(prev => prev.filter(msg => msg.content !== '🎤 Processando áudio...'));
+      
+      let errorMessage = "Erro no processamento. Tente novamente.";
+      
+      if (error instanceof Error) {
+        if (error.message.includes('API key')) {
+          errorMessage = "Configure suas chaves de API nas configurações.";
+        } else if (error.message.includes('Whisper')) {
+          errorMessage = "Erro na transcrição de áudio. Verifique sua chave OpenAI.";
+        } else if (error.message.includes('GPT')) {
+          errorMessage = "Erro na geração de resposta. Verifique sua chave OpenAI.";
+        } else if (error.message.includes('ElevenLabs')) {
+          errorMessage = "Erro na síntese de voz. Verifique sua chave ElevenLabs.";
+        } else if (error.message.includes('D-ID')) {
+          errorMessage = "Erro na animação do avatar. Verifique sua chave D-ID.";
+        }
+      }
+      
       toast({
         title: "Erro no processamento",
-        description: "Tente novamente em alguns instantes.",
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
